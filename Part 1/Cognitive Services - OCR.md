@@ -3,7 +3,7 @@
 This tutorial shows how to obtain a [Cognitive Services](https://azure.microsoft.com/en-us/services/cognitive-services/) API Key and use a console app to return words shown on a image using the [Computer Vision OCR](https://www.microsoft.com/cognitive-services/en-us/Computer-Vision-API/documentation/OCR) API.
 
 * This is **Part 1**.
-* There's also Part 2 - Azure Functions.
+* There's also [Part 2 - Azure Functions](https://github.com/msimecek/Azure-Functions-OCR/blob/master/Part%202/Azure%20Functions%20-%20OCR.md).
 
 ## Get Azure Subscription
 
