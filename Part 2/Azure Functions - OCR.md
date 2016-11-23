@@ -1,6 +1,6 @@
 # Azure Functions - OCR
 
-We will now extend the application from [Part 1] and create a function that will listen to a Storage Queue, take an image link from it, process through OCR and save results to Storage Table.
+We will now extend the application from [Part 1](https://github.com/msimecek/Azure-Functions-OCR/blob/master/Part%201/Cognitive%20Services%20-%20OCR.md) and create a function that will listen to a Storage Queue, take an image link from it, process through OCR and save results to Storage Table.
 
 ## Portal
 
