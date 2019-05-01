@@ -20,11 +20,10 @@ If you don't have an Azure Subscription already, there are several ways to get i
 
 1. Go to [Azure Portal](https://portal.azure.com)
 2. Create new **Resource Group**
-3. Add new **Cognitive Services API**
-   1. Choose **Computer Vision**
-   2. Pick a name for it, such as *Vision*
-   3. Pick a pricing tier - **Free** will be enough for this case
-   4. Review and accept **License Terms**
+3. Add new **Cognitive Services**
+   1. Pick a name for it, such as *Vision*
+   2. Pick a pricing tier
+   3. Review and accept **License Terms**
 4. Go to the newly created API
 5. Go to **Keys** and copy **KEY 1**
 
@@ -33,55 +32,132 @@ If you don't have an Azure Subscription already, there are several ways to get i
 1. Start **Visual Studio**
 2. Go to **File > New Project > Windows** and create new **Console Application**
 3. Right-click the project and select **Manage NuGet packages**...
-4. Search for and install package **Microsoft.ProjectOxford.Vision**
-   - Alternatively you can use the Package Manager console: `Install-Package Microsoft.ProjectOxford.Vision`
+4. Search for and install package **Microsoft.Azure.CognitiveServices.Vision.ComputerVision**
+   - Alternatively you can use the Package Manager console: `Install-Package Microsoft.Azure.CognitiveServices.Vision.ComputerVision`
 5. Go to **Program.cs** and start coding
+
 
 First we need to define a variable for the Cognitive Services API Key. 
 
-> We will bake the code directly into the code, but in production you would probably use **ConfigurationManager** or some other settings/keys management method.
+We will bake the code directly into the code, but in production you would probably use **ConfigurationManager** or some other settings/keys management method. We also define the
+base URI of the region that we are using, in my case, `eastus`. You should set this to 
+the region that your resource group is created in.
 
 ```c#
-string apiKey = "keykeykey";
+private const string SubscriptionKey = "keykeykey";
+private const string ApiUri = "https://eastus.api.cognitive.microsoft.com/";
 ```
 
-Then we need to find an image to be sent to the API. Go ahead and look around the internet, I will use this:
+We also define some visual features that Azure should be looking for, in `Features`.
+
+In the `Main` method we need to find image(s) to be sent to the API. Go ahead and look around the internet, I will use these:
 
 ```c#
-string imageUrl = "https://2.bp.blogspot.com/-SaoK-RZRX60/V1krBqEqXcI/AAAAAAAAcSY/TaMvJ8V6l4AkBlhmA-Z9noWcxBNNJ_PegCLcB/w800/2017-skoda-octavia-0.jpg";
+static void Main(string[] args)
+{
+    const string waterfall = "https://upload.wikimedia.org/wikipedia/commons/3/3c/Shaki_waterfall.jpg";
+    const string skoda = "https://2.bp.blogspot.com/-SaoK-RZRX60/V1krBqEqXcI/AAAAAAAAcSY/TaMvJ8V6l4AkBlhmA-Z9noWcxBNNJ_PegCLcB/w800/2017-skoda-octavia-0.jpg";
+
 ```
 
 Next, we finally initialize the Vision API client:
 
 ```c#
-VisionServiceClient visionClient = new VisionServiceClient(apiKey);
+    ComputerVisionClient computerVision = new ComputerVisionClient(
+        new ApiKeyServiceClientCredentials(SubscriptionKey),
+        new System.Net.Http.DelegatingHandler[] { });
+
+    computerVision.Endpoint = ApiUri;
 ```
 
-And send our image to the OCR endpoint:
+And send our images to the vision and OCR endpoints:
 
 ```c#
-OcrResults results = visionClient.RecognizeTextAsync(imageUrl, "cs").Result;
+    var t1 = AnalyzeRemoteAsync(computerVision, waterfall);
+    var t2 = AnalyzeRemoteAsync(computerVision, skoda);
+    var ocr = MakeOcrRequest(computerVision, skoda);
 ```
 
-> Few remarks for this line:
+Then, we wait for everything to finish before we shut down the program
+```c#
+    Task.WhenAll(t1, t2, ocr).Wait(5000);
+    Console.WriteLine("Press ENTER to exit");
+    Console.ReadLine();
+}
+```
+
+## Description/Caption
+Lets take a look at `AnalyzeRemoteAsync` first, which tries to find a good description of an image.
+
+```c#
+private static async Task AnalyzeRemoteAsync(
+    ComputerVisionClient computerVision, string imageUrl)
+{
+    if (!Uri.IsWellFormedUriString(imageUrl, UriKind.Absolute))
+    {
+        Console.WriteLine(
+            "\nInvalid remoteImageUrl:\n{0} \n", imageUrl);
+        return;
+    }
+
+    ImageAnalysis analysis =
+        await computerVision.AnalyzeImageAsync(imageUrl, Features);
+    DisplayResults(analysis, imageUrl);
+}
+```
+We check that the URI is OK and send a request to Azure. `DisplayResults` simply prints the captions that Azure vision has found.
+```c#
+private static void DisplayResults(ImageAnalysis analysis, string imageUri)
+{
+    Console.WriteLine(imageUri);
+    if (analysis.Description.Captions.Count != 0)
+    {
+        Console.WriteLine(analysis.Description.Captions[0].Text + "\n");
+    }
+    else
+    {
+        Console.WriteLine("No description generated.");
+    }
+}
+```
+
+## OCR
+
+```c#
+static async Task MakeOcrRequest(ComputerVisionClient computerVision, string imageUrl)
+{
+    try
+    {
+        var httpResponse = await computerVision.RecognizePrintedTextWithHttpMessagesAsync(true, imageUrl, OcrLanguages.Cs);
+```
+> Few remarks for this API call:
 >
-> * Parameter value *"cs"* is saing that the text is expected to be Czech. For English, you would use *"en"*.
+> * Parameter value *"OcrLanguages.cs"* is saing that the text is expected to be Czech. Does anything change if use the default value or switch to English?
 > * For simplicity, we're running this method synchronously and blocking the thread. In real application you would use *async/await*.
 
 After the call is done, we use LINQ to get specific words from the result:
-
 ```c#
-var words = from r in results.Regions
-			from l in r.Lines
-             from w in l.Words
-             select w.Text;
+        var words = httpResponse.Body.Regions.SelectMany(r => r.Lines)
+            .SelectMany(l => l.Words)
+            .Select(w => w.Text);
 ```
-
-And print them to the console:
-
+This is possibly more clear in query syntax,
 ```c#
-Console.WriteLine(String.Join("|", words.ToArray()));
-Console.ReadKey();
+        var words = from r in results.Regions
+                    from l in r.Lines
+                    from w in l.Words
+                    select w.Text;
+```
+And print them to the console:
+```c#
+        Console.WriteLine($"OCR request: {imageUrl}");
+        Console.WriteLine("OCR result: " + words.Aggregate((a, b) => a + "|" + b));
+    }
+    catch (Exception e)
+    {
+        Console.WriteLine("\n" + e.Message);
+    }
+}
 ```
 
 If everything went well, your application should connect to the Cognitive Services Computer Vision API, send image URL to the OCR endpoint and write words separated by |.
@@ -91,33 +167,98 @@ If everything went well, your application should connect to the Cognitive Servic
 Full code here:
 
 ```c#
-using Microsoft.ProjectOxford.Vision;
-using Microsoft.ProjectOxford.Vision.Contract;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision;
+using Microsoft.Azure.CognitiveServices.Vision.ComputerVision.Models;
 
-namespace OCR_Demo
+namespace ocr_cli
 {
     class Program
     {
+        private const string SubscriptionKey = "keykeykey";
+        private const string ApiUri = "https://eastus.api.cognitive.microsoft.com/";
+
+        // Specify the features to return
+        private static readonly List<VisualFeatureTypes> Features =
+            new List<VisualFeatureTypes>()
+            {
+                VisualFeatureTypes.Categories, VisualFeatureTypes.Description,
+                VisualFeatureTypes.Faces, VisualFeatureTypes.ImageType,
+                VisualFeatureTypes.Tags
+            };
         static void Main(string[] args)
         {
-            string apiKey = "keykeykey";
-            string imageUrl = "https://2.bp.blogspot.com/-SaoK-RZRX60/V1krBqEqXcI/AAAAAAAAcSY/TaMvJ8V6l4AkBlhmA-Z9noWcxBNNJ_PegCLcB/w800/2017-skoda-octavia-0.jpg";
+            const string waterfall = "https://upload.wikimedia.org/wikipedia/commons/3/3c/Shaki_waterfall.jpg";
+            const string skoda = "https://2.bp.blogspot.com/-SaoK-RZRX60/V1krBqEqXcI/AAAAAAAAcSY/TaMvJ8V6l4AkBlhmA-Z9noWcxBNNJ_PegCLcB/w800/2017-skoda-octavia-0.jpg";
 
-            VisionServiceClient visionClient = new VisionServiceClient(apiKey);
+            ComputerVisionClient computerVision = new ComputerVisionClient(
+                new ApiKeyServiceClientCredentials(SubscriptionKey),
+                new System.Net.Http.DelegatingHandler[] { });
 
-            OcrResults results = visionClient.RecognizeTextAsync(imageUrl, "cs").Result;
+            computerVision.Endpoint = ApiUri;
 
-            var words = from r in results.Regions
-                        from l in r.Lines
-                        from w in l.Words
-                        select w.Text;
+            Console.WriteLine("Images being analyzed ...");
+            var t1 = AnalyzeRemoteAsync(computerVision, waterfall);
+            var t2 = AnalyzeRemoteAsync(computerVision, skoda);
+            var ocr = MakeOcrRequest(computerVision, skoda);
 
-            Console.WriteLine(String.Join("|", words.ToArray()));
-            Console.ReadKey();
+            Task.WhenAll(t1, t2, ocr).Wait(5000);
+            Console.WriteLine("Press ENTER to exit");
+            Console.ReadLine();
+        }
+
+        // Analyze a remote image
+        private static async Task AnalyzeRemoteAsync(
+            ComputerVisionClient computerVision, string imageUrl)
+        {
+            if (!Uri.IsWellFormedUriString(imageUrl, UriKind.Absolute))
+            {
+                Console.WriteLine(
+                    "\nInvalid remoteImageUrl:\n{0} \n", imageUrl);
+                return;
+            }
+
+            ImageAnalysis analysis =
+                await computerVision.AnalyzeImageAsync(imageUrl, Features);
+            DisplayResults(analysis, imageUrl);
+        }
+
+
+        // Display the most relevant caption for the image
+        private static void DisplayResults(ImageAnalysis analysis, string imageUri)
+        {
+            Console.WriteLine(imageUri);
+            if (analysis.Description.Captions.Count != 0)
+            {
+                Console.WriteLine(analysis.Description.Captions[0].Text + "\n");
+            }
+            else
+            {
+                Console.WriteLine("No description generated.");
+            }
+        }
+
+        static async Task MakeOcrRequest(ComputerVisionClient computerVision, string imageUrl)
+        {
+            try
+            {
+                var httpResponse = await computerVision.RecognizePrintedTextWithHttpMessagesAsync(true, imageUrl, OcrLanguages.Cs);
+
+                var words = httpResponse.Body.Regions.SelectMany(r => r.Lines)
+                    .SelectMany(l => l.Words)
+                    .Select(w => w.Text);
+
+                Console.WriteLine($"OCR request: {imageUrl}");
+                Console.WriteLine("OCR result: " + words.Aggregate((a, b) => a + "|" + b));
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("\n" + e.Message);
+            }
         }
     }
 }
 ```
-
