@@ -50,6 +50,17 @@ private const string ApiUri = "https://eastus.api.cognitive.microsoft.com/";
 
 We also define some visual features that Azure should be looking for, in `Features`.
 
+```c#
+// Specify the features to return
+private static readonly List<VisualFeatureTypes> Features =
+    new List<VisualFeatureTypes>()
+    {
+        VisualFeatureTypes.Categories, VisualFeatureTypes.Description,
+        VisualFeatureTypes.Faces, VisualFeatureTypes.ImageType,
+        VisualFeatureTypes.Tags
+    };
+```
+
 In the `Main` method we need to find image(s) to be sent to the API. Go ahead and look around the internet, I will use these:
 
 ```c#
